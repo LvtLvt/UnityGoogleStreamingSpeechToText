@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.Audio;
+using UnityEngine.Networking;
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Google.Cloud.Speech.V1;
@@ -103,11 +104,50 @@ namespace GoogleCloudStreamingSpeechToText {
             StopListening();
         }
 
-        private void Awake() {
-            string credentialsPath = Path.Combine(Application.streamingAssetsPath, CredentialFileName);
-            if (!File.Exists(credentialsPath)) {
-                Debug.LogError("Could not find StreamingAssets/gcp_credentials.json. Please create a Google service account key for a Google Cloud Platform project with the Speech-to-Text API enabled, then download that key as a JSON file and save it as StreamingAssets/gcp_credentials.json in this project. For more info on creating a service account key, see Google's documentation: https://cloud.google.com/speech-to-text/docs/quickstart-client-libraries#before-you-begin");
-                return;
+        private void Awake()
+        {
+            StartCoroutine(onAwake());
+        }
+
+        private IEnumerator onAwake()
+        {
+            string credentialsPath;
+            
+            if (Application.platform != RuntimePlatform.Android)
+            {
+                credentialsPath = Path.Combine(Application.streamingAssetsPath, CredentialFileName);
+                if (!File.Exists(credentialsPath)) {
+                    Debug.LogError("Could not find StreamingAssets/gcp_credentials.json. Please create a Google service account key for a Google Cloud Platform project with the Speech-to-Text API enabled, then download that key as a JSON file and save it as StreamingAssets/gcp_credentials.json in this project. For more info on creating a service account key, see Google's documentation: https://cloud.google.com/speech-to-text/docs/quickstart-client-libraries#before-you-begin");
+                    yield break;
+                }
+            }
+            else
+            {
+                var unityWebRequest =  UnityWebRequest.Get(Path.Combine(Application.streamingAssetsPath, CredentialFileName));
+                yield return unityWebRequest.SendWebRequest();
+                var textureBytes = unityWebRequest.downloadHandler.data;
+
+                Debug.LogWarning($"textureBytes >>> {textureBytes}");
+                
+                var path = Application.persistentDataPath + "/gcps";
+                if (!Directory.Exists(path))
+                {
+                    Directory.CreateDirectory(path);
+                }
+
+                if (File.Exists(path + CredentialFileName))
+                {
+                    File.Delete(path + CredentialFileName);
+                }
+
+                File.WriteAllBytes(path + CredentialFileName, textureBytes);
+                
+                Debug.LogWarning("write all bytes finished");
+
+                credentialsPath = path + CredentialFileName;
+                
+                Debug.LogWarning(File.Exists(credentialsPath));
+
             }
 
             Environment.SetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS", credentialsPath);
@@ -133,6 +173,7 @@ namespace GoogleCloudStreamingSpeechToText {
             if (startOnAwake) {
                 StartListening();
             }
+            
         }
 
         private void OnDestroy() {
