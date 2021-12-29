@@ -11,6 +11,7 @@ using UnityEngine.Networking;
 using Google.Protobuf;
 using Google.Protobuf.WellKnownTypes;
 using Google.Cloud.Speech.V1;
+using Google.Protobuf.Collections;
 using Grpc.Core;
 
 namespace GoogleCloudStreamingSpeechToText {
@@ -62,6 +63,8 @@ namespace GoogleCloudStreamingSpeechToText {
         private const double NormalizedFloatTo16BitConversionFactor = 0x7FFF + 0.4999999999999999;
         private const float MicInitializationTimeout = 1;
         private const int StreamingLimit = 290000; // almost 5 minutes
+
+        public RecognitionConfig CurrentRecognitionConfig;
 
         public void StartListening() {
             if (!_initialized) {
@@ -324,22 +327,18 @@ namespace GoogleCloudStreamingSpeechToText {
             _streamingCall = speech.StreamingRecognize();
 
             AudioConfiguration audioConfiguration = AudioSettings.GetConfiguration();
-
+            
             // Write the initial request with the config.
-            await _streamingCall.WriteAsync(new StreamingRecognizeRequest() {
+            await _streamingCall.WriteAsync(new StreamingRecognizeRequest()
+            {
                 StreamingConfig = new StreamingRecognitionConfig() {
-                    Config = new RecognitionConfig() {
-                        Encoding = RecognitionConfig.Types.AudioEncoding.Linear16,
-                        SampleRateHertz = audioConfiguration.sampleRate,
-                        LanguageCode = "en",
-                        MaxAlternatives = 1
-                    },
+                    Config = CurrentRecognitionConfig,
                     InterimResults = returnInterimResults,
                 }
             });
 
             _cancellationTokenSource = new CancellationTokenSource();
-
+            
             Task handleTranscriptionResponses = HandleTranscriptionResponses();
 
             _listening = true;
@@ -396,5 +395,7 @@ namespace GoogleCloudStreamingSpeechToText {
                 }
             }
         }
+        
+        
     }
 }
