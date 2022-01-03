@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -35,11 +36,11 @@ namespace GoogleCloudStreamingSpeechToText {
         }
 
         public bool startOnAwake = true;
-        public bool returnInterimResults = true;
+        public bool returnInterimResults = false;
         public bool enableDebugLogging = false;
         public UnityEvent onStartListening;
         public UnityEvent onStopListening;
-        public TranscriptionEvent onFinalResult = new UnityEvent<string[]>();
+        public UnityEvent<List<string>> onFinalResult = new UnityEvent<List<string>>();
         public TranscriptionEvent onInterimResult = new TranscriptionEvent();
 
         private bool _initialized = false;
@@ -59,12 +60,12 @@ namespace GoogleCloudStreamingSpeechToText {
         private int _finalRequestEndTime = 0;
         private double _bridgingOffset = 0;
 
-        private const stringCredentialFileName= "gcp_credentials.json";
-        private const doubleNormalizedFloatTo16BitConversionFactor= 0x7FFF + 0.4999999999999999;
-        private const floatMicInitializationTimeout= 1;
-        private const intStreamingLimit= 290000;// almost 5 minutes
+        private const string CredentialFileName = "gcp_credentials.json";
+        private const double NormalizedFloatTo16BitConversionFactor = 0x7FFF + 0.4999999999999999;
+        private const float MicInitializationTimeout = 1;
+        private const int StreamingLimit = 290000; // almost 5 minutes
 
-public RecognitionConfig CurrentRecognitionConfig;
+        public RecognitionConfig CurrentRecognitionConfig;
 
         public void StartListening() {
             if (!_initialized) {
@@ -115,10 +116,10 @@ public RecognitionConfig CurrentRecognitionConfig;
         private IEnumerator onAwake()
         {
             string credentialsPath;
-
+            
             if (Application.platform != RuntimePlatform.Android)
             {
-                credentialsPath = Path.Combine(Application.streamingAssetsPath,CredentialFileName);
+                credentialsPath = Path.Combine(Application.streamingAssetsPath, CredentialFileName);
                 if (!File.Exists(credentialsPath)) {
                     Debug.LogError("Could not find StreamingAssets/gcp_credentials.json. Please create a Google service account key for a Google Cloud Platform project with the Speech-to-Text API enabled, then download that key as a JSON file and save it as StreamingAssets/gcp_credentials.json in this project. For more info on creating a service account key, see Google's documentation: https://cloud.google.com/speech-to-text/docs/quickstart-client-libraries#before-you-begin");
                     yield break;
@@ -126,29 +127,29 @@ public RecognitionConfig CurrentRecognitionConfig;
             }
             else
             {
-                var unityWebRequest =  UnityWebRequest.Get(Path.Combine(Application.streamingAssetsPath,CredentialFileName));
+                var unityWebRequest =  UnityWebRequest.Get(Path.Combine(Application.streamingAssetsPath, CredentialFileName));
                 yield return unityWebRequest.SendWebRequest();
                 var textureBytes = unityWebRequest.downloadHandler.data;
 
                 Debug.LogWarning($"textureBytes >>> {textureBytes}");
-
+                
                 var path = Application.persistentDataPath + "/gcps";
                 if (!Directory.Exists(path))
                 {
                     Directory.CreateDirectory(path);
                 }
 
-                if (File.Exists(path +CredentialFileName))
+                if (File.Exists(path + CredentialFileName))
                 {
-                    File.Delete(path +CredentialFileName);
+                    File.Delete(path + CredentialFileName);
                 }
 
-                File.WriteAllBytes(path +CredentialFileName, textureBytes);
-
+                File.WriteAllBytes(path + CredentialFileName, textureBytes);
+                
                 Debug.LogWarning("write all bytes finished");
 
-                credentialsPath = path +CredentialFileName;
-
+                credentialsPath = path + CredentialFileName;
+                
                 Debug.LogWarning(File.Exists(credentialsPath));
 
             }
@@ -176,7 +177,7 @@ public RecognitionConfig CurrentRecognitionConfig;
             if (startOnAwake) {
                 StartListening();
             }
-
+            
         }
 
         private void OnDestroy() {
@@ -195,8 +196,8 @@ public RecognitionConfig CurrentRecognitionConfig;
             }
 
             if (_newStream && _lastAudioInput.Count != 0) {
-// Approximate math to calculate time of chunks
-double chunkTime =StreamingLimit/ (double)_lastAudioInput.Count;
+                // Approximate math to calculate time of chunks
+                double chunkTime = StreamingLimit / (double)_lastAudioInput.Count;
                 if (!Mathf.Approximately((float)chunkTime, 0)) {
                     if (_bridgingOffset < 0) {
                         _bridgingOffset = 0;
@@ -220,10 +221,10 @@ double chunkTime =StreamingLimit/ (double)_lastAudioInput.Count;
             }
             _newStream = false;
 
-// convert 1st channel of audio from floating point to 16 bit packed into a byte array
+            // convert 1st channel of audio from floating point to 16 bit packed into a byte array
             // reference: https://github.com/naudio/NAudio/blob/ec5266ca90e33809b2c0ceccd5fdbbf54e819568/Docs/RawSourceWaveStream.md#playing-from-a-byte-array
-for (int i = 0; i < data.Length / channels; i++) {
-                short sample = (short)(data[i * channels] *NormalizedFloatTo16BitConversionFactor);
+            for (int i = 0; i < data.Length / channels; i++) {
+                short sample = (short)(data[i * channels] * NormalizedFloatTo16BitConversionFactor);
                 byte[] bytes = BitConverter.GetBytes(sample);
                 _buffer[i * 2] = bytes[0];
                 _buffer[i * 2 + 1] = bytes[1];
@@ -252,11 +253,11 @@ for (int i = 0; i < data.Length / channels; i++) {
             AudioConfiguration audioConfiguration = AudioSettings.GetConfiguration();
             _audioSource.clip = Microphone.Start(_microphoneName, true, 10, audioConfiguration.sampleRate);
 
-// wait for microphone to initialize
-float timerStartTime = Time.realtimeSinceStartup;
+            // wait for microphone to initialize
+            float timerStartTime = Time.realtimeSinceStartup;
             bool timedOut = false;
             while (!(Microphone.GetPosition(_microphoneName) > 0) && !timedOut) {
-                timedOut = Time.realtimeSinceStartup - timerStartTime >=MicInitializationTimeout;
+                timedOut = Time.realtimeSinceStartup - timerStartTime >= MicInitializationTimeout;
             }
 
             if (timedOut) {
@@ -282,7 +283,7 @@ float timerStartTime = Time.realtimeSinceStartup;
                 }
 
                 _resultEndTime = (int)((result.ResultEndTime.Seconds * 1000) + (result.ResultEndTime.Nanos / 1000000));
-
+                
                 string transcript = result.Alternatives[0].Transcript.Trim();
 
                 if (result.IsFinal) {
@@ -291,10 +292,12 @@ float timerStartTime = Time.realtimeSinceStartup;
                     }
 
                     _isFinalEndTime = _resultEndTime;
-
-// onFinalResult.Invoke(transcript);
-onFinalResult.Invoke(result.Alternatives.ToList()
-                        .Select((alternative) => alternative.Transcript.Trim()));
+                    
+                    // onFinalResult.Invoke(transcript);
+                    
+					SpeechRecognitionAlternative[] resultArray = new SpeechRecognitionAlternative[result.Alternatives.Count];
+                    result.Alternatives.CopyTo(resultArray, 0);
+                    onFinalResult.Invoke(resultArray.Select((alternative) => alternative.Transcript.Trim()).ToList());
                 } else {
                     if (returnInterimResults) {
                         if (enableDebugLogging) {
@@ -329,9 +332,9 @@ onFinalResult.Invoke(result.Alternatives.ToList()
             _streamingCall = speech.StreamingRecognize();
 
             AudioConfiguration audioConfiguration = AudioSettings.GetConfiguration();
-
-// Write the initial request with the config.
-await _streamingCall.WriteAsync(new StreamingRecognizeRequest()
+            
+            // Write the initial request with the config.
+            await _streamingCall.WriteAsync(new StreamingRecognizeRequest()
             {
                 StreamingConfig = new StreamingRecognitionConfig() {
                     Config = CurrentRecognitionConfig,
@@ -340,7 +343,7 @@ await _streamingCall.WriteAsync(new StreamingRecognizeRequest()
             });
 
             _cancellationTokenSource = new CancellationTokenSource();
-
+            
             Task handleTranscriptionResponses = HandleTranscriptionResponses();
 
             _listening = true;
@@ -358,8 +361,8 @@ await _streamingCall.WriteAsync(new StreamingRecognizeRequest()
             try {
                 await Task.Delay(Timeout.InfiniteTimeSpan, _cancellationTokenSource.Token);
             } catch (TaskCanceledException) {
-// Stop recording and shut down.
-if (enableDebugLogging) {
+                // Stop recording and shut down.
+                if (enableDebugLogging) {
                     Debug.Log("Stopping...");
                 }
 
@@ -397,7 +400,7 @@ if (enableDebugLogging) {
                 }
             }
         }
-
-
+        
+        
     }
 }
